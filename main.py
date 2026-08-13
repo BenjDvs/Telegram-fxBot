@@ -1,6 +1,6 @@
 import re # Add this at the very top of your file!
 from mt5linux import MetaTrader5
-mt5 = MetaTrader5() # Add this at the top!
+mt5 = MetaTrader5(host="localhost", port=18812) # Add this at the top!
 from telethon import TelegramClient, events
 
 #search "LOT" to change lot side SUCCESS BOT!
