@@ -51,7 +51,7 @@ def parse_signal(message_text):
 
 
 client = TelegramClient('forex_session', api_id, api_hash)
-channel_username = 'goldkillerhub'
+channel_username = 'goodbestsignal'
 
 @client.on(events.NewMessage(chats=channel_username))
 async def handler(event):
