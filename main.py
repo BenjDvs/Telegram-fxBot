@@ -88,7 +88,7 @@ async def handler(event):
             print(f"Skipping Trade: TP ({extracted_data['tp']}) must be lower than current price ({price})")
             return
         
-        request = {
+     request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
             "volume": 0.01, 
@@ -96,11 +96,11 @@ async def handler(event):
             "price": price,
             "sl": extracted_data['sl'],
             "tp": extracted_data['tp'],
-            "deviation": 20,
+            "deviation": 500,  # Increased to 50 pips to absorb XAUUSD volatility and Bid/Ask spread gaps
             "magic": 123456,
             "comment": "Telegram Bot",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": mt5.ORDER_FILLING_FOK,  # Standard Forex filling mode
         }
         
         # Safely count positions before the trade
