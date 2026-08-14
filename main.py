@@ -1,4 +1,5 @@
 import re
+import time
 from mt5linux import MetaTrader5
 from telethon import TelegramClient, events
 
@@ -102,16 +103,29 @@ async def handler(event):
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
         
-        # 4. Execute the trade safely!
+       # 4. Execute the trade safely!
+        print(f"Sending {action} order for {symbol} to MT5...")
         try:
             result = mt5.order_send(request)
-            print(f"TRADE RESULT: {result}")
-        except Exception as e:
-            if "OrderSendResult" in str(e) or "PicklingError" in str(e):
-                print("✅ TRADE EXECUTED: Command reached MT5 successfully!")
-                print("⚠️ (Ignored the harmless bridge serialization bug)")
+            
+            # If the bridge doesn't crash, handle the normal response:
+            if result.retcode == mt5.TRADE_RETCODE_DONE:
+                print(f"✅ TRADE EXECUTED: {action} on {symbol} successful!")
             else:
-                print(f"❌ ERROR: {e}")
+                print(f"⚠️ Trade rejected by broker. Retcode: {result.retcode}")
+                
+        except Exception as e:
+            # The bridge crashes on the return trip, but the trade executes perfectly in MT5.
+            print("⚠️ Bridge serialization error intercepted. Verifying trade status...")
+            time.sleep(2) # Give MT5 a second to open the order
+            
+            # Ask MT5 if there are any open positions for this symbol to confirm success
+            positions = mt5.positions_get(symbol=symbol)
+            
+            if positions and len(positions) > 0:
+                print(f"✅ TRADE VERIFIED: {action} on {symbol} is LIVE in MT5!")
+            else:
+                print(f"❌ Trade may have failed. Bridge Error: {e}")
                 
     else:
         print("Could not extract all necessary data. Ignoring message.")
