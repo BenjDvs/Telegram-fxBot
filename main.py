@@ -71,15 +71,22 @@ async def handler(event):
         
         order_type = mt5.ORDER_TYPE_BUY if action == 'BUY' else mt5.ORDER_TYPE_SELL
         
-        # Bypassing the Pickling Bug with copy_rates
-        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 1)
-        if rates is None or len(rates) == 0:
-            print(f"Could not get price data for {symbol}. Ensure it is added to MT5 Market Watch!")
+        # 1. Fetch exact LIVE Ask/Bid directly as a raw float to bypass the Pickling Bug!
+        try:
+            if action == 'BUY':
+                price = mt5._container.eval(f"mt5.symbol_info_tick('{symbol}').ask")
+            else:
+                price = mt5._container.eval(f"mt5.symbol_info_tick('{symbol}').bid")
+                
+            price = float(price)
+            if price == 0.0:
+                print(f"Error: {symbol} market is closed or not in Market Watch.")
+                return
+        except Exception as e:
+            print(f"Could not fetch live tick for {symbol}. Error: {e}")
             return
-            
-        # Extract the close price of the current minute candle
-        price = float(rates[0]['close'])
         
+        # 2. Validation Checks
         if action == 'BUY' and extracted_data['tp'] <= price:
             print(f"Skipping Trade: TP ({extracted_data['tp']}) must be higher than current price ({price})")
             return
@@ -88,7 +95,7 @@ async def handler(event):
             print(f"Skipping Trade: TP ({extracted_data['tp']}) must be lower than current price ({price})")
             return
         
-        # --- FIXED SPACING BELOW ---
+        # 3. Order Dictionary (FIXED FILLING MODE FOR EXNESS)
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
@@ -97,11 +104,11 @@ async def handler(event):
             "price": price,
             "sl": extracted_data['sl'],
             "tp": extracted_data['tp'],
-            "deviation": 500,  # Increased to 50 pips to absorb XAUUSD volatility
+            "deviation": 500, 
             "magic": 123456,
             "comment": "Telegram Bot",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_FOK,  # Standard Forex filling mode
+            "type_filling": mt5.ORDER_FILLING_IOC,  # Must be IOC for Exness!
         }
         
         # Safely count positions before the trade
@@ -109,31 +116,32 @@ async def handler(event):
         if positions_before is None:
             positions_before = 0
             
-        print(f"Sending {action} order for {symbol} to MT5...")
+        print(f"Sending {action} order for {symbol} at exact price {price}...")
+        
         try:
             result = mt5.order_send(request)
             
-            # If the bridge doesn't crash, handle the normal response:
             if result.retcode == mt5.TRADE_RETCODE_DONE:
                 print(f"✅ TRADE EXECUTED: {action} on {symbol} successful!")
             else:
                 print(f"⚠️ Trade rejected by broker. Retcode: {result.retcode}")
                 
         except Exception as e:
-            # The bridge crashes on the return trip, but the trade executes perfectly in MT5.
-            print("⚠️ Bridge serialization error intercepted. Verifying trade status...")
-            time.sleep(2) # Give MT5 a second to open the order
+            # We catch the bridge crash and verify the trade manually
+            print(f"⚠️ Bridge serialization error intercepted: {e}")
+            print("Verifying trade status...")
+            time.sleep(2) # Give MT5 2 seconds to execute the order
             
-            # Safely check if total open positions increased
             positions_after = mt5.positions_total()
             if positions_after is not None and positions_after > positions_before:
                 print(f"✅ TRADE VERIFIED: {action} on {symbol} is LIVE in MT5!")
             else:
-                print(f"❌ Trade may have failed. No new positions detected.")
+                print(f"❌ Trade failed. No new positions detected.")
+                print("👉 CHECK MT5 JOURNAL: Open MT5 on the VPS, look at the 'Toolbox' at the bottom, and click the 'Journal' tab to see exactly why Exness rejected the trade.")
                 
     else:
         print("Could not extract all necessary data. Ignoring message.")
-
+        
 print("Bot is starting... Listening for signals...")
 client.start()
 client.run_until_disconnected()
