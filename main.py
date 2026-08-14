@@ -88,14 +88,16 @@ async def handler(event):
             print(f"Skipping Trade: TP ({extracted_data['tp']}) must be lower than current price ({price})")
             return
         
-     request = {"action": mt5.TRADE_ACTION_DEAL,
+        # --- FIXED SPACING BELOW ---
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
             "volume": 0.01, 
             "type": order_type,
             "price": price,
             "sl": extracted_data['sl'],
             "tp": extracted_data['tp'],
-            "deviation": 500,  # Increased to 50 pips to absorb XAUUSD volatility and Bid/Ask spread gaps
+            "deviation": 500,  # Increased to 50 pips to absorb XAUUSD volatility
             "magic": 123456,
             "comment": "Telegram Bot",
             "type_time": mt5.ORDER_TIME_GTC,
