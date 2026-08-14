@@ -3,6 +3,9 @@ import time
 from mt5linux import MetaTrader5
 from telethon import TelegramClient, events
 
+#search "LOT" to change lot side SUCCESS BOT!
+#channel_username = 'goodbestsignal or goldkillerhub'
+
 # Connect to the mt5server.exe running in Wine
 mt5 = MetaTrader5(host='localhost', port=18812)
 
@@ -107,7 +110,7 @@ async def handler(event):
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
-            "volume": 0.01, 
+            "volume": 0.02, 
             "type": order_type,
             "price": price,
             "sl": extracted_data['sl'],
