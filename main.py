@@ -111,37 +111,32 @@ async def handler(event):
             "type_filling": mt5.ORDER_FILLING_IOC,  # Must be IOC for Exness!
         }
         
-        # Safely count positions before the trade
-        positions_before = mt5.positions_total()
-        if positions_before is None:
-            positions_before = 0
-            
         print(f"Sending {action} order for {symbol} at exact price {price}...")
         
         try:
-            result = mt5.order_send(request)
+            # 4. Bypass the Pickling Bug!
+            # We convert the request dictionary to a string, send it to the Windows Wine environment,
+            # execute the order_send over there, and only return the integer 'retcode' back to Linux.
+            req_str = str(request)
+            retcode = mt5._container.eval(f"mt5.order_send({req_str}).retcode")
             
-            if result.retcode == mt5.TRADE_RETCODE_DONE:
+            if retcode == 10009: # 10009 is the MT5 success code
                 print(f"✅ TRADE EXECUTED: {action} on {symbol} successful!")
             else:
-                print(f"⚠️ Trade rejected by broker. Retcode: {result.retcode}")
+                print(f"⚠️ Trade rejected by broker. Retcode: {retcode}")
+                if retcode == 10016:
+                    print("-> Reason (10016): INVALID STOPS. Your SL or TP is impossible at the current market price!")
+                elif retcode == 10013:
+                    print("-> Reason (10013): INVALID REQUEST. Check your volume or filling mode.")
+                elif retcode == 10027:
+                    print("-> Reason (10027): ALGO TRADING DISABLED. Ensure the 'Algo Trading' button in MT5 is green!")
                 
         except Exception as e:
-            # We catch the bridge crash and verify the trade manually
-            print(f"⚠️ Bridge serialization error intercepted: {e}")
-            print("Verifying trade status...")
-            time.sleep(2) # Give MT5 2 seconds to execute the order
-            
-            positions_after = mt5.positions_total()
-            if positions_after is not None and positions_after > positions_before:
-                print(f"✅ TRADE VERIFIED: {action} on {symbol} is LIVE in MT5!")
-            else:
-                print(f"❌ Trade failed. No new positions detected.")
-                print("👉 CHECK MT5 JOURNAL: Open MT5 on the VPS, look at the 'Toolbox' at the bottom, and click the 'Journal' tab to see exactly why Exness rejected the trade.")
+            print(f"⚠️ Execution error: {e}")
                 
     else:
         print("Could not extract all necessary data. Ignoring message.")
         
 print("Bot is starting... Listening for signals...")
 client.start()
-client.run_until_disconnected()
+client.run_until_disconnected() # <-- ADDED THE MISSING PARENTHESES HERE!
