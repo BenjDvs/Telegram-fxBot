@@ -70,12 +70,14 @@ async def handler(event):
         
         order_type = mt5.ORDER_TYPE_BUY if action == 'BUY' else mt5.ORDER_TYPE_SELL
         
-        tick = mt5.symbol_info_tick(symbol)
-        if tick is None:
-            print(f"Could not get tick data for {symbol}. Is it visible in your MT5 Market Watch?")
+        # 2. Get current price (Bypassing the Pickling Bug)
+        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 1)
+        if rates is None or len(rates) == 0:
+            print(f"Could not get price data for {symbol}. Ensure it is added to MT5 Market Watch!")
             return
             
-        price = tick.ask if action == 'BUY' else tick.bid
+        # Extract the close price of the current minute candle
+        price = float(rates[0]['close'])
         
         if action == 'BUY' and extracted_data['tp'] <= price:
             print(f"Skipping Trade: TP ({extracted_data['tp']}) must be higher than current price ({price})")
