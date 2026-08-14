@@ -86,14 +86,22 @@ async def handler(event):
             print(f"Could not fetch live tick for {symbol}. Error: {e}")
             return
         
-        # 2. Validation Checks
-        if action == 'BUY' and extracted_data['tp'] <= price:
-            print(f"Skipping Trade: TP ({extracted_data['tp']}) must be higher than current price ({price})")
-            return
+        # 2. Validation Checks (Ensuring SL and TP are logically valid before sending)
+        if action == 'BUY':
+            if extracted_data['sl'] >= price:
+                print(f"⚠️ Skipping Trade: For a BUY, SL ({extracted_data['sl']}) must be BELOW current price ({price})")
+                return
+            if extracted_data['tp'] <= price:
+                print(f"⚠️ Skipping Trade: For a BUY, TP ({extracted_data['tp']}) must be ABOVE current price ({price})")
+                return
 
-        if action == 'SELL' and extracted_data['tp'] >= price:
-            print(f"Skipping Trade: TP ({extracted_data['tp']}) must be lower than current price ({price})")
-            return
+        if action == 'SELL':
+            if extracted_data['sl'] <= price:
+                print(f"⚠️ Skipping Trade: For a SELL, SL ({extracted_data['sl']}) must be ABOVE current price ({price})")
+                return
+            if extracted_data['tp'] >= price:
+                print(f"⚠️ Skipping Trade: For a SELL, TP ({extracted_data['tp']}) must be BELOW current price ({price})")
+                return
         
         # 3. Order Dictionary (FIXED FILLING MODE FOR EXNESS)
         request = {
