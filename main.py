@@ -1,10 +1,30 @@
 import re # Add this at the very top of your file!
 from mt5linux import MetaTrader5
+# Connect to the mt5server.exe running in Wine
 mt5 = MetaTrader5(host='localhost', port=18812) # Add this at the top!
 from telethon import TelegramClient, events
 
 #search "LOT" to change lot side SUCCESS BOT!
 #channel_username = 'goodbestsignal or goldkillerhub'
+
+# Hardcode your Exness credentials to bypass the MT5 popup loop
+ACCOUNT_LOGIN = 100772112
+ACCOUNT_PASSWORD = "YOUR_ACTUAL_PASSWORD"  # Replace with your real password
+ACCOUNT_SERVER = "Exness-MT5Trial9"
+
+# 1. Initialize MT5 with credentials
+if not mt5.initialize(login=ACCOUNT_LOGIN, server=ACCOUNT_SERVER, password=ACCOUNT_PASSWORD):
+    print(f"Failed to initialize MT5, error code: {mt5.last_error()}")
+else:
+    print("MT5 Initialized Successfully!")
+
+# 2. Force the login connection
+authorized = mt5.login(ACCOUNT_LOGIN, password=ACCOUNT_PASSWORD, server=ACCOUNT_SERVER)
+
+if authorized:
+    print("Successfully connected to Exness broker!")
+else:
+    print(f"Login failed, error code: {mt5.last_error()}")
 
 # --- YOUR TELEGRAM CREDENTIALS ---
 # You must complete Stage 1 (my.telegram.org) to get these numbers!
