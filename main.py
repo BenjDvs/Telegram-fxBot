@@ -71,7 +71,7 @@ async def handler(event):
         
         order_type = mt5.ORDER_TYPE_BUY if action == 'BUY' else mt5.ORDER_TYPE_SELL
         
-        # 2. Get current price (Bypassing the Pickling Bug)
+        # Bypassing the Pickling Bug with copy_rates
         rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 1)
         if rates is None or len(rates) == 0:
             print(f"Could not get price data for {symbol}. Ensure it is added to MT5 Market Watch!")
@@ -103,7 +103,11 @@ async def handler(event):
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
         
-       # 4. Execute the trade safely!
+        # Safely count positions before the trade
+        positions_before = mt5.positions_total()
+        if positions_before is None:
+            positions_before = 0
+            
         print(f"Sending {action} order for {symbol} to MT5...")
         try:
             result = mt5.order_send(request)
@@ -119,13 +123,12 @@ async def handler(event):
             print("⚠️ Bridge serialization error intercepted. Verifying trade status...")
             time.sleep(2) # Give MT5 a second to open the order
             
-            # Ask MT5 if there are any open positions for this symbol to confirm success
-            positions = mt5.positions_get(symbol=symbol)
-            
-            if positions and len(positions) > 0:
+            # Safely check if total open positions increased
+            positions_after = mt5.positions_total()
+            if positions_after is not None and positions_after > positions_before:
                 print(f"✅ TRADE VERIFIED: {action} on {symbol} is LIVE in MT5!")
             else:
-                print(f"❌ Trade may have failed. Bridge Error: {e}")
+                print(f"❌ Trade may have failed. No new positions detected.")
                 
     else:
         print("Could not extract all necessary data. Ignoring message.")
