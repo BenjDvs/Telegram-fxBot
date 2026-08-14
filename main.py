@@ -1,38 +1,23 @@
-import re # Add this at the very top of your file!
+import re
 from mt5linux import MetaTrader5
-# Connect to the mt5server.exe running in Wine
-mt5 = MetaTrader5(host='localhost', port=18812) # Add this at the top!
 from telethon import TelegramClient, events
 
-#search "LOT" to change lot side SUCCESS BOT!
-#channel_username = 'goodbestsignal or goldkillerhub'
+# Connect to the mt5server.exe running in Wine
+mt5 = MetaTrader5(host='localhost', port=18812)
 
-# Hardcode your Exness credentials to bypass the MT5 popup loop
-ACCOUNT_LOGIN = 100772112
-ACCOUNT_PASSWORD = "YOUR_ACTUAL_PASSWORD"  # Replace with your real password
-ACCOUNT_SERVER = "Exness-MT5Trial9"
-
-# 1. Initialize MT5 with credentials
-if not mt5.initialize(login=ACCOUNT_LOGIN, server=ACCOUNT_SERVER, password=ACCOUNT_PASSWORD):
+# --- MT5 INITIALIZATION ---
+print("Connecting to MT5 Terminal...")
+if not mt5.initialize():
     print(f"Failed to initialize MT5, error code: {mt5.last_error()}")
+    exit()
 else:
     print("MT5 Initialized Successfully!")
 
-# 2. Force the login connection
-authorized = mt5.login(ACCOUNT_LOGIN, password=ACCOUNT_PASSWORD, server=ACCOUNT_SERVER)
-
-if authorized:
-    print("Successfully connected to Exness broker!")
-else:
-    print(f"Login failed, error code: {mt5.last_error()}")
-
 # --- YOUR TELEGRAM CREDENTIALS ---
-# You must complete Stage 1 (my.telegram.org) to get these numbers!
 api_id = 39853867 
 api_hash = '97ad6f46617781299a9e0b62db81a88c'
 
 def parse_signal(message_text):
-    # Create a dictionary to hold extracted data
     signal_data = {
         'action': None,
         'symbol': None,
@@ -40,35 +25,27 @@ def parse_signal(message_text):
         'tp': None
     }
     
-    # 1. Find Action (BUY or SELL - this will easily catch #BUY)
     action_match = re.search(r'(BUY|SELL)', message_text, re.IGNORECASE)
     if action_match:
         signal_data['action'] = action_match.group(1).upper()
         
-    # 2. Find Symbol (This will catch #XAUUSD)
     symbol_match = re.search(r'(XAUUSD|GOLD)', message_text, re.IGNORECASE)
     if symbol_match:
         signal_data['symbol'] = 'XAUUSDm'
         
-    # 3. Find Stop Loss (SL)
     sl_match = re.search(r'SL[\s:-]*([0-9.]+)', message_text, re.IGNORECASE)
     if sl_match:
         signal_data['sl'] = float(sl_match.group(1))
         
-    # 4. Find Take Profit (TP)
-    # The \d* ensures it safely ignores numbers like "1" in "TP1" and grabs the price
     tp_matches = re.findall(r'TP\d*[\s:-]*([0-9.]+)', message_text, re.IGNORECASE)
     
     if tp_matches:
-        # Your format has 8 TPs. 
-        # Index 0 = 1st TP, Index 1 = 2nd TP, Index 3 = 4th TP, Index -1 = Last TP
         if len(tp_matches) >= 4:
-            signal_data['tp'] = float(tp_matches[3]) # Currently grabs the 4th TP
+            signal_data['tp'] = float(tp_matches[3]) 
         else:
             signal_data['tp'] = float(tp_matches[-1]) 
             
     return signal_data
-
 
 client = TelegramClient('forex_session', api_id, api_hash)
 channel_username = 'goodbestsignal'
@@ -88,18 +65,11 @@ async def handler(event):
     if all(extracted_data.values()):
         print("Ready to send to MT5!")
         
-        # --- MT5 EXECUTION LOGIC ---
-        if not mt5.initialize():
-            print("Failed to initialize MT5")
-            return
-        
         symbol = extracted_data['symbol']
         action = extracted_data['action']
         
-        # 1. Prepare MT5 variables
         order_type = mt5.ORDER_TYPE_BUY if action == 'BUY' else mt5.ORDER_TYPE_SELL
         
-        # Get current price directly from MT5
         tick = mt5.symbol_info_tick(symbol)
         if tick is None:
             print(f"Could not get tick data for {symbol}. Is it visible in your MT5 Market Watch?")
@@ -107,7 +77,6 @@ async def handler(event):
             
         price = tick.ask if action == 'BUY' else tick.bid
         
-        # 2. Validation checks for BUY/SELL logic
         if action == 'BUY' and extracted_data['tp'] <= price:
             print(f"Skipping Trade: TP ({extracted_data['tp']}) must be higher than current price ({price})")
             return
@@ -116,11 +85,10 @@ async def handler(event):
             print(f"Skipping Trade: TP ({extracted_data['tp']}) must be lower than current price ({price})")
             return
         
-        # 3. Build order request dictionary
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
-            "volume": 0.01, # Fixed lot size for testing
+            "volume": 0.01, 
             "type": order_type,
             "price": price,
             "sl": extracted_data['sl'],
@@ -132,7 +100,6 @@ async def handler(event):
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
         
-        # 4. Execute the trade!
         result = mt5.order_send(request)
         print(f"TRADE RESULT: {result}")
         
