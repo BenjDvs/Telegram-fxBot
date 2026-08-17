@@ -110,7 +110,7 @@ async def handler(event):
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
-            "volume": 0.01, 
+            "volume": 0.02, 
             "type": order_type,
             "price": price,
             "sl": extracted_data['sl'],
