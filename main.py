@@ -52,7 +52,7 @@ def parse_signal(message_text):
     return signal_data
 
 client = TelegramClient('forex_session', api_id, api_hash)
-channel_username = 'goldkillerhub'
+channel_username = 'goodbestsignal'
 
 @client.on(events.NewMessage(chats=channel_username))
 async def handler(event):
@@ -110,7 +110,7 @@ async def handler(event):
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
-            "volume": 0.02, 
+            "volume": 0.01, 
             "type": order_type,
             "price": price,
             "sl": extracted_data['sl'],
