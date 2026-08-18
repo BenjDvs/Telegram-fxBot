@@ -7,7 +7,7 @@ from telethon import TelegramClient, events
 #channel_username = 'goodbestsignal or goldkillerhub'
 
 # Connect to the mt5server.exe running in Wine
-mt5 = MetaTrader5(host='localhost', port=18812)
+mt5 = MetaTrader5(host='127.0.0.1', port=18812)
 
 # --- MT5 INITIALIZATION ---
 print("Connecting to MT5 Terminal...")
