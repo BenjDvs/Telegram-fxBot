@@ -2,6 +2,9 @@ import re
 import rpyc
 from telethon import TelegramClient, events
 
+#search "volume/lot" to change lot side SUCCESS BOT!
+#channel_username = 'goodbestsignal or goldkillerhub'
+
 # --- 1. DIRECT RPYC CONNECTION (Bypassing mt5linux) ---
 print("Connecting directly to the Wine MT5 Server...")
 try:
@@ -51,7 +54,7 @@ def parse_signal(message_text):
     return signal_data
 
 client = TelegramClient('forex_session', api_id, api_hash)
-channel_username = 'goodbestsignal'
+channel_username = 'goldkillerhub'
 
 @client.on(events.NewMessage(chats=channel_username))
 async def handler(event):
