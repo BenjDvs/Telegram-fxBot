@@ -75,20 +75,13 @@ async def handler(event):
         
         order_type = mt5.ORDER_TYPE_BUY if action == 'BUY' else mt5.ORDER_TYPE_SELL
         
-        # 1. Fetch exact LIVE Ask/Bid directly as a raw float to bypass the Pickling Bug!
-        try:
-            if action == 'BUY':
-                price = mt5._container.eval(f"mt5.symbol_info_tick('{symbol}').ask")
-            else:
-                price = mt5._container.eval(f"mt5.symbol_info_tick('{symbol}').bid")
-                
-            price = float(price)
-            if price == 0.0:
-                print(f"Error: {symbol} market is closed or not in Market Watch.")
-                return
-        except Exception as e:
-            print(f"Could not fetch live tick for {symbol}. Error: {e}")
+        # 1. Safely fetch price using copy_rates
+        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 1)
+        if rates is None or len(rates) == 0:
+            print(f"Error: Could not fetch price for {symbol}. Ensure it is in Market Watch!")
             return
+        
+        price = float(rates[0]['close'])
         
         # 2. Validation Checks (Ensuring SL and TP are logically valid before sending)
         if action == 'BUY':
