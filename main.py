@@ -103,35 +103,43 @@ else:
                 print(f"⚠️ Skipping Trade: For a SELL, TP ({extracted_data['tp']}) must be BELOW price ({price})")
                 return
                 
-        # --- 4. PREPARE THE ORDER ---
-        order_type = mt5.ORDER_TYPE_BUY if action == 'BUY' else mt5.ORDER_TYPE_SELL
-        request = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": symbol,
-            "volume": 0.01, 
-            "type": order_type,
-            "price": price,
-            "sl": extracted_data['sl'],
-            "tp": extracted_data['tp'],
-            "deviation": 500, 
-            "magic": 123456,
-            "comment": "Telegram Bot",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
-        }
+        # --- 4 & 5. PREPARE AND EXECUTE TRADE ON THE WINDOWS SERVER ---
+        # Pass only raw strings and floats across the bridge
+        conn.namespace['trade_sym'] = symbol
+        conn.namespace['trade_act'] = action
+        conn.namespace['trade_prc'] = price
+        conn.namespace['trade_sl'] = extracted_data['sl']
+        conn.namespace['trade_tp'] = extracted_data['tp']
         
         print(f"Sending {action} order for {symbol} at exact price {price}...")
         
-        # --- 5. EXECUTE TRADE ON THE WINDOWS SERVER ---
-        # Pass the dictionary to Wine, run the trade execution there, and pull the retcode back
-        conn.namespace['request'] = request
         trade_code = """
+import MetaTrader5 as mt5
+
+order_type = mt5.ORDER_TYPE_BUY if trade_act == 'BUY' else mt5.ORDER_TYPE_SELL
+
+request = {
+    "action": mt5.TRADE_ACTION_DEAL,
+    "symbol": trade_sym,
+    "volume": 0.01, 
+    "type": order_type,
+    "price": trade_prc,
+    "sl": trade_sl,
+    "tp": trade_tp,
+    "deviation": 500, 
+    "magic": 123456,
+    "comment": "Telegram Bot",
+    "type_time": mt5.ORDER_TIME_GTC,
+    "type_filling": mt5.ORDER_FILLING_IOC,
+}
+
 result = mt5.order_send(request)
 if result is None:
     retcode = mt5.last_error()[0]
 else:
     retcode = result.retcode
 """
+        # Execute the trade logic entirely inside Windows
         conn.execute(trade_code)
         retcode = conn.namespace['retcode']
         
@@ -139,9 +147,10 @@ else:
             print(f"✅ TRADE EXECUTED: {action} on {symbol} successful!")
         else:
             print(f"⚠️ Trade rejected by broker. Retcode: {retcode}")
-                
-    else:
-        print("Could not extract all necessary data. Ignoring message.")
+            if retcode == 10016:
+                print("-> Reason (10016): INVALID STOPS. SL or TP is impossible at current market price!")
+            elif retcode == 10013:
+                print("-> Reason (10013): INVALID REQUEST. Check volume or filling mode.")
         
 print("Bot is starting... Listening for signals...")
 client.start()
