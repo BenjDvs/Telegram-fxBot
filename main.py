@@ -1,34 +1,33 @@
 import re
-import time
-from mt5linux import MetaTrader5
+import rpyc
 from telethon import TelegramClient, events
 
-#search "LOT" to change lot side SUCCESS BOT!
-#channel_username = 'goodbestsignal or goldkillerhub'
+# --- 1. DIRECT RPYC CONNECTION (Bypassing mt5linux) ---
+print("Connecting directly to the Wine MT5 Server...")
+try:
+    # Connect directly to mt5server.exe running in Wine
+    conn = rpyc.classic.connect('127.0.0.1', 18812)
+    # Import MetaTrader5 inside the Windows environment
+    conn.execute("import MetaTrader5 as mt5")
+    # Create a local reference to the remote module
+    mt5 = conn.modules.MetaTrader5
+except Exception as e:
+    print(f"Failed to connect to MT5 bridge: {e}")
+    exit()
 
-# Connect to the mt5server.exe running in Wine
-#mt5 = MetaTrader5(host='127.0.0.1', port=18812)
-mt5 = MetaTrader5()
-
-# --- MT5 INITIALIZATION ---
 print("Connecting to MT5 Terminal...")
 if not mt5.initialize():
-    print(f"Failed to initialize MT5, error code: {mt5.last_error()}")
+    print(f"Failed to initialize MT5")
     exit()
 else:
     print("MT5 Initialized Successfully!")
 
-# --- YOUR TELEGRAM CREDENTIALS ---
+# --- 2. YOUR TELEGRAM CREDENTIALS ---
 api_id = 39853867 
 api_hash = '97ad6f46617781299a9e0b62db81a88c'
 
 def parse_signal(message_text):
-    signal_data = {
-        'action': None,
-        'symbol': None,
-        'sl': None,
-        'tp': None
-    }
+    signal_data = {'action': None, 'symbol': None, 'sl': None, 'tp': None}
     
     action_match = re.search(r'(BUY|SELL)', message_text, re.IGNORECASE)
     if action_match:
@@ -43,7 +42,6 @@ def parse_signal(message_text):
         signal_data['sl'] = float(sl_match.group(1))
         
     tp_matches = re.findall(r'TP\d*[\s:-]*([0-9.]+)', message_text, re.IGNORECASE)
-    
     if tp_matches:
         if len(tp_matches) >= 4:
             signal_data['tp'] = float(tp_matches[3]) 
@@ -62,9 +60,7 @@ async def handler(event):
     print(f"NEW SIGNAL RECEIVED:\n{raw_signal}")
     
     extracted_data = parse_signal(raw_signal)
-    
-    print("EXTRACTED DATA:")
-    print(extracted_data)
+    print("EXTRACTED DATA:", extracted_data)
     print("--------------------------------------------------")
     
     if all(extracted_data.values()):
@@ -73,34 +69,42 @@ async def handler(event):
         symbol = extracted_data['symbol']
         action = extracted_data['action']
         
-        order_type = mt5.ORDER_TYPE_BUY if action == 'BUY' else mt5.ORDER_TYPE_SELL
+        # --- 3. FETCH PRICE ON THE WINDOWS SERVER ---
+        # We execute this block completely inside Wine to avoid serialization crashes
+        fetch_code = f"""
+tick = mt5.symbol_info_tick('{symbol}')
+if tick:
+    current_price = float(tick.ask if '{action}' == 'BUY' else tick.bid)
+else:
+    current_price = 0.0
+"""
+        conn.execute(fetch_code)
+        price = conn.namespace['current_price']
         
-        # 1. Safely fetch price using copy_rates
-        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 1)
-        if rates is None or len(rates) == 0:
-            print(f"Error: Could not fetch price for {symbol}. Ensure it is in Market Watch!")
+        if price == 0.0:
+            print(f"Error: Could not fetch live tick for {symbol}. Ensure it is in Market Watch!")
             return
+            
+        print(f"Live market price fetched: {price}")
         
-        price = float(rates[0]['close'])
-        
-        # 2. Validation Checks (Ensuring SL and TP are logically valid before sending)
+        # Validation Checks
         if action == 'BUY':
             if extracted_data['sl'] >= price:
-                print(f"⚠️ Skipping Trade: For a BUY, SL ({extracted_data['sl']}) must be BELOW current price ({price})")
+                print(f"⚠️ Skipping Trade: For a BUY, SL ({extracted_data['sl']}) must be BELOW price ({price})")
                 return
             if extracted_data['tp'] <= price:
-                print(f"⚠️ Skipping Trade: For a BUY, TP ({extracted_data['tp']}) must be ABOVE current price ({price})")
+                print(f"⚠️ Skipping Trade: For a BUY, TP ({extracted_data['tp']}) must be ABOVE price ({price})")
                 return
-
         if action == 'SELL':
             if extracted_data['sl'] <= price:
-                print(f"⚠️ Skipping Trade: For a SELL, SL ({extracted_data['sl']}) must be ABOVE current price ({price})")
+                print(f"⚠️ Skipping Trade: For a SELL, SL ({extracted_data['sl']}) must be ABOVE price ({price})")
                 return
             if extracted_data['tp'] >= price:
-                print(f"⚠️ Skipping Trade: For a SELL, TP ({extracted_data['tp']}) must be BELOW current price ({price})")
+                print(f"⚠️ Skipping Trade: For a SELL, TP ({extracted_data['tp']}) must be BELOW price ({price})")
                 return
-        
-        # 3. Order Dictionary (FIXED FILLING MODE FOR EXNESS)
+                
+        # --- 4. PREPARE THE ORDER ---
+        order_type = mt5.ORDER_TYPE_BUY if action == 'BUY' else mt5.ORDER_TYPE_SELL
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
@@ -113,35 +117,32 @@ async def handler(event):
             "magic": 123456,
             "comment": "Telegram Bot",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,  # Must be IOC for Exness!
+            "type_filling": mt5.ORDER_FILLING_IOC,
         }
         
         print(f"Sending {action} order for {symbol} at exact price {price}...")
         
-        try:
-            # 4. Bypass the Pickling Bug!
-            # We convert the request dictionary to a string, send it to the Windows Wine environment,
-            # execute the order_send over there, and only return the integer 'retcode' back to Linux.
-            req_str = str(request)
-            retcode = mt5._container.eval(f"mt5.order_send({req_str}).retcode")
-            
-            if retcode == 10009: # 10009 is the MT5 success code
-                print(f"✅ TRADE EXECUTED: {action} on {symbol} successful!")
-            else:
-                print(f"⚠️ Trade rejected by broker. Retcode: {retcode}")
-                if retcode == 10016:
-                    print("-> Reason (10016): INVALID STOPS. Your SL or TP is impossible at the current market price!")
-                elif retcode == 10013:
-                    print("-> Reason (10013): INVALID REQUEST. Check your volume or filling mode.")
-                elif retcode == 10027:
-                    print("-> Reason (10027): ALGO TRADING DISABLED. Ensure the 'Algo Trading' button in MT5 is green!")
-                
-        except Exception as e:
-            print(f"⚠️ Execution error: {e}")
+        # --- 5. EXECUTE TRADE ON THE WINDOWS SERVER ---
+        # Pass the dictionary to Wine, run the trade execution there, and pull the retcode back
+        conn.namespace['request'] = request
+        trade_code = """
+result = mt5.order_send(request)
+if result is None:
+    retcode = mt5.last_error()[0]
+else:
+    retcode = result.retcode
+"""
+        conn.execute(trade_code)
+        retcode = conn.namespace['retcode']
+        
+        if retcode == 10009: 
+            print(f"✅ TRADE EXECUTED: {action} on {symbol} successful!")
+        else:
+            print(f"⚠️ Trade rejected by broker. Retcode: {retcode}")
                 
     else:
         print("Could not extract all necessary data. Ignoring message.")
         
 print("Bot is starting... Listening for signals...")
 client.start()
-client.run_until_disconnected() # <-- ADDED THE MISSING PARENTHESES HERE!
+client.run_until_disconnected()
