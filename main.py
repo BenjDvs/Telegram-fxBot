@@ -2,17 +2,11 @@ import re
 import rpyc
 from telethon import TelegramClient, events
 
-# search "volume/lot" to change lot size SUCCESS BOT!
-# channel_username = 'goodbestsignal or goldkillerhub'
-
-# --- 1. DIRECT RPYC CONNECTION (Bypassing mt5linux) ---
+# --- 1. DIRECT RPYC CONNECTION ---
 print("Connecting directly to the Wine MT5 Server...")
 try:
-    # Connect directly to mt5server.exe running in Wine
     conn = rpyc.classic.connect('127.0.0.1', 18812)
-    # Import MetaTrader5 inside the Windows environment
     conn.execute("import MetaTrader5 as mt5")
-    # Create a local reference to the remote module
     mt5 = conn.modules.MetaTrader5
 except Exception as e:
     print(f"Failed to connect to MT5 bridge: {e}")
@@ -30,30 +24,26 @@ api_id = 39853867
 api_hash = '97ad6f46617781299a9e0b62db81a88c'
 
 def parse_signal(message_text):
-    signal_data = {'action': None, 'symbol': None, 'sl': None, 'tp': None}
+    signal_data = {'action': None, 'symbol': None, 'sl': None, 'tp_target_3': None, 'tp_target_runner': None}
     
-    # 1. Action (BUY / SELL)
     action_match = re.search(r'(BUY|SELL)', message_text, re.IGNORECASE)
     if action_match:
         signal_data['action'] = action_match.group(1).upper()
         
-    # 2. Symbol Mapping
     symbol_match = re.search(r'(XAUUSD|GOLD)', message_text, re.IGNORECASE)
     if symbol_match:
         signal_data['symbol'] = 'XAUUSDm'
         
-    # 3. Stop Loss (SL)
     sl_match = re.search(r'SL[\s:-]*([0-9.]+)', message_text, re.IGNORECASE)
     if sl_match:
         signal_data['sl'] = float(sl_match.group(1))
         
-    # 4. Take Profit (TP) -> Second to the last
     tp_matches = re.findall(r'TP\d*[\s:-]*([0-9.]+)', message_text, re.IGNORECASE)
     if tp_matches:
-        if len(tp_matches) >= 2:
-            signal_data['tp'] = float(tp_matches[-2])  # Grabs second to last TP
-        else:
-            signal_data['tp'] = float(tp_matches[-1])  # Fallback if only 1 TP is present
+        # TP3 = The 3rd TP in the Telegram message (Index 2)
+        signal_data['tp_target_3'] = float(tp_matches[2]) if len(tp_matches) >= 3 else float(tp_matches[-1])
+        # Runner TP = The second to last TP in the Telegram message (Index -2)
+        signal_data['tp_target_runner'] = float(tp_matches[-2]) if len(tp_matches) >= 2 else float(tp_matches[-1])
             
     return signal_data
 
@@ -93,68 +83,74 @@ else:
             
         print(f"Live market price fetched: {price}")
         
-        # Validation Checks
+        # Validation Checks for both TPs
         if action == 'BUY':
             if extracted_data['sl'] >= price:
                 print(f"⚠️ Skipping Trade: For a BUY, SL ({extracted_data['sl']}) must be BELOW price ({price})")
                 return
-            if extracted_data['tp'] <= price:
-                print(f"⚠️ Skipping Trade: For a BUY, TP ({extracted_data['tp']}) must be ABOVE price ({price})")
+            if extracted_data['tp_target_3'] <= price or extracted_data['tp_target_runner'] <= price:
+                print(f"⚠️ Skipping Trade: For a BUY, TPs must be ABOVE price ({price})")
                 return
         if action == 'SELL':
             if extracted_data['sl'] <= price:
                 print(f"⚠️ Skipping Trade: For a SELL, SL ({extracted_data['sl']}) must be ABOVE price ({price})")
                 return
-            if extracted_data['tp'] >= price:
-                print(f"⚠️ Skipping Trade: For a SELL, TP ({extracted_data['tp']}) must be BELOW price ({price})")
+            if extracted_data['tp_target_3'] >= price or extracted_data['tp_target_runner'] >= price:
+                print(f"⚠️ Skipping Trade: For a SELL, TPs must be BELOW price ({price})")
                 return
                 
-        # --- 4 & 5. PREPARE AND EXECUTE TRADE ON THE WINDOWS SERVER ---
+        # --- 4 & 5. PREPARE AND EXECUTE DUAL TRADES ---
         conn.namespace['trade_sym'] = symbol
         conn.namespace['trade_act'] = action
         conn.namespace['trade_prc'] = price
         conn.namespace['trade_sl'] = extracted_data['sl']
-        conn.namespace['trade_tp'] = extracted_data['tp']
+        # Pass the newly mapped variables to the MT5 execution list
+        conn.namespace['trade_tps'] = [extracted_data['tp_target_3'], extracted_data['tp_target_runner']]
         
-        print(f"Sending {action} order for {symbol} at exact price {price}...")
+        print(f"Sending Dual {action} orders for {symbol} at price {price}...")
         
         trade_code = """
 import MetaTrader5 as mt5
 
 order_type = mt5.ORDER_TYPE_BUY if trade_act == 'BUY' else mt5.ORDER_TYPE_SELL
+results = []
 
-request = {
-    "action": mt5.TRADE_ACTION_DEAL,
-    "symbol": trade_sym,
-    "volume": 0.01, 
-    "type": order_type,
-    "price": trade_prc,
-    "sl": trade_sl,
-    "tp": trade_tp,
-    "deviation": 500, 
-    "magic": 123456,
-    "comment": "Telegram Bot",
-    "type_time": mt5.ORDER_TIME_GTC,
-    "type_filling": mt5.ORDER_FILLING_IOC,
-}
-
-result = mt5.order_send(request)
-if result is None:
-    retcode = mt5.last_error()[0]
-else:
-    retcode = result.retcode
+# Loop through the two TPs and execute a 0.01 lot trade for each
+for tp_target in trade_tps:
+    request = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": trade_sym,
+        "volume": 0.01, 
+        "type": order_type,
+        "price": trade_prc,
+        "sl": trade_sl,
+        "tp": tp_target,
+        "deviation": 500, 
+        "magic": 123456,
+        "comment": "Multi-TP Bot",
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": mt5.ORDER_FILLING_IOC,
+    }
+    
+    res = mt5.order_send(request)
+    if res is None:
+        results.append(mt5.last_error()[0])
+    else:
+        results.append(res.retcode)
 """
         conn.execute(trade_code)
-        retcode = conn.namespace['retcode']
+        retcodes = conn.namespace['results']
         
-        if retcode == 10009: 
-            print(f"✅ TRADE EXECUTED: {action} on {symbol} successful!")
-        else:
-            print(f"⚠️ Trade rejected by broker. Retcode: {retcode}")
-            if retcode == 10016:
-                print("-> Reason (10016): INVALID STOPS. SL or TP is impossible at current market price!")
-            elif retcode == 10013:
-                print("-> Reason (10013): INVALID REQUEST. Check volume or filling mode.")
+        # Analyze the results returned from Windows
+        for i, retcode in enumerate(retcodes):
+            tp_label = "TP3" if i == 0 else "Second-to-Last TP"
+            
+            if retcode == 10009: 
+                print(f"✅ TRADE {i+1} EXECUTED: {action} on {symbol} successful ({tp_label})!")
+            else:
+                print(f"⚠️ Trade {i+1} rejected. Retcode: {retcode}")
+                if retcode == 10016:
+                    print(f"-> Reason (10016): INVALID STOPS for {tp_label}.")
         
 print("Bot is starting... Listening for signals...")
 client.start()
