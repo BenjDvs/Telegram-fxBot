@@ -2,8 +2,8 @@ import re
 import rpyc
 from telethon import TelegramClient, events
 
-#search "volume/lot" to change lot side SUCCESS BOT!
-#channel_username = 'goodbestsignal or goldkillerhub'
+# search "volume/lot" to change lot size SUCCESS BOT!
+# channel_username = 'goodbestsignal or goldkillerhub'
 
 # --- 1. DIRECT RPYC CONNECTION (Bypassing mt5linux) ---
 print("Connecting directly to the Wine MT5 Server...")
@@ -32,24 +32,28 @@ api_hash = '97ad6f46617781299a9e0b62db81a88c'
 def parse_signal(message_text):
     signal_data = {'action': None, 'symbol': None, 'sl': None, 'tp': None}
     
+    # 1. Action (BUY / SELL)
     action_match = re.search(r'(BUY|SELL)', message_text, re.IGNORECASE)
     if action_match:
         signal_data['action'] = action_match.group(1).upper()
         
+    # 2. Symbol Mapping
     symbol_match = re.search(r'(XAUUSD|GOLD)', message_text, re.IGNORECASE)
     if symbol_match:
         signal_data['symbol'] = 'XAUUSDm'
         
+    # 3. Stop Loss (SL)
     sl_match = re.search(r'SL[\s:-]*([0-9.]+)', message_text, re.IGNORECASE)
     if sl_match:
         signal_data['sl'] = float(sl_match.group(1))
         
+    # 4. Take Profit (TP) -> Second to the last
     tp_matches = re.findall(r'TP\d*[\s:-]*([0-9.]+)', message_text, re.IGNORECASE)
     if tp_matches:
-        if len(tp_matches) >= 4:
-            signal_data['tp'] = float(tp_matches[3]) 
+        if len(tp_matches) >= 2:
+            signal_data['tp'] = float(tp_matches[-2])  # Grabs second to last TP
         else:
-            signal_data['tp'] = float(tp_matches[-1]) 
+            signal_data['tp'] = float(tp_matches[-1])  # Fallback if only 1 TP is present
             
     return signal_data
 
@@ -73,7 +77,6 @@ async def handler(event):
         action = extracted_data['action']
         
         # --- 3. FETCH PRICE ON THE WINDOWS SERVER ---
-        # We execute this block completely inside Wine to avoid serialization crashes
         fetch_code = f"""
 tick = mt5.symbol_info_tick('{symbol}')
 if tick:
@@ -107,7 +110,6 @@ else:
                 return
                 
         # --- 4 & 5. PREPARE AND EXECUTE TRADE ON THE WINDOWS SERVER ---
-        # Pass only raw strings and floats across the bridge
         conn.namespace['trade_sym'] = symbol
         conn.namespace['trade_act'] = action
         conn.namespace['trade_prc'] = price
@@ -142,7 +144,6 @@ if result is None:
 else:
     retcode = result.retcode
 """
-        # Execute the trade logic entirely inside Windows
         conn.execute(trade_code)
         retcode = conn.namespace['retcode']
         
