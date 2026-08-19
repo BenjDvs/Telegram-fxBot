@@ -126,7 +126,7 @@ order_type = mt5.ORDER_TYPE_BUY if trade_act == 'BUY' else mt5.ORDER_TYPE_SELL
 request = {
     "action": mt5.TRADE_ACTION_DEAL,
     "symbol": trade_sym,
-    "volume": 0.02, 
+    "volume": 0.01, 
     "type": order_type,
     "price": trade_prc,
     "sl": trade_sl,
