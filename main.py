@@ -40,7 +40,7 @@ def parse_signal(message_text):
     if sl_match:
         signal_data['sl'] = float(sl_match.group(1))
         
-    tp_matches = re.findall(r'TP\d*[\s:-]*([0-9.]+)', message_text, re.IGNORECASE)
+    tp_matches = re.findall(r'TP[0-9¹²³⁴⁵⁶⁷⁸⁹⁰]*[\s:-]*([0-9.]+)', message_text, re.IGNORECASE)
     if tp_matches:
         # TP3 = The 3rd TP in the Telegram message (Index 2)
         signal_data['tp_target_3'] = float(tp_matches[2]) if len(tp_matches) >= 3 else float(tp_matches[-1])
