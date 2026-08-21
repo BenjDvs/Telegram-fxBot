@@ -15,11 +15,18 @@ except Exception as e:
     exit()
 
 print("Connecting to MT5 Terminal...")
-if not mt5.initialize():
-    print(f"Failed to initialize MT5")
+
+# --- UPDATE YOUR REAL ACCOUNT DETAILS HERE ---
+real_account = 12345678              # Replace with your OLD account number
+real_password = "YourExnessPassword" # Replace with your OLD account password
+real_server = "Exness-MT5Trial9"     # Ensure this matches your broker server EXACTLY
+
+# Force Python to log into the specific account
+if not mt5.initialize(login=real_account, password=real_password, server=real_server):
+    print(f"Failed to initialize MT5. Error: {mt5.last_error()}")
     exit()
 else:
-    print("MT5 Initialized Successfully!")
+    print(f"MT5 Initialized Successfully on Account: {real_account}")
 
 # --- 2. YOUR TELEGRAM CREDENTIALS ---
 api_id = 39853867 
