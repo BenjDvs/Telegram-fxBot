@@ -16,10 +16,10 @@ except Exception as e:
 
 print("Connecting to MT5 Terminal...")
 
-# --- UPDATE YOUR REAL ACCOUNT DETAILS HERE ---
-real_account = 12345678              # Replace with your OLD account number
-real_password = "YourExnessPassword" # Replace with your OLD account password
-real_server = "Exness-MT5Trial9"     # Ensure this matches your broker server EXACTLY
+# --- FIXED REAL ACCOUNT DETAILS ---
+real_account = 476484132             
+real_password = "JtK*U6Rh" # Replace this text with your actual password (JtK...)
+real_server = "Exness-MT5Trial9"     
 
 # Force Python to log into the specific account
 if not mt5.initialize(login=real_account, password=real_password, server=real_server):
