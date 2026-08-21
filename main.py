@@ -16,17 +16,21 @@ except Exception as e:
 
 print("Connecting to MT5 Terminal...")
 
-# --- FIXED REAL ACCOUNT DETAILS ---
-real_account = 476484132             
-real_password = "JtK*U6Rh" # Replace this text with your actual password (JtK...)
-real_server = "Exness-MT5Trial9"     
+# Exact path extracted from your start_mt5.sh script
+mt5_path = r"C:\Program Files\MetaTrader 5\terminal64.exe"
 
-# Force Python to log into the specific account
-if not mt5.initialize(login=real_account, password=real_password, server=real_server):
+# --- FIXED REAL ACCOUNT DETAILS ---
+# Initialize and bind directly to the Telegram bot terminal
+if not mt5.initialize(
+    path=mt5_path,
+    login=476484132,
+    password="JtK*U6Rh",
+    server="Exness-MT5Trial9"
+):
     print(f"Failed to initialize MT5. Error: {mt5.last_error()}")
     exit()
 else:
-    print(f"MT5 Initialized Successfully on Account: {real_account}")
+    print("MT5 Initialized Successfully on Telegram Terminal (Account: 476484132)")
 
 # --- 2. YOUR TELEGRAM CREDENTIALS ---
 api_id = 39853867 
